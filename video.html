@@ -54,49 +54,59 @@
         var scene = null;
         var sceneToRender = null;
         var createDefaultEngine = function() { return new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true,  disableWebGL2Support: false}); };
-
-        const xrPolyfillPromise = new Promise((resolve) => {
-    if (navigator.xr) {
-        return resolve();
-    }
-    if (window.WebXRPolyfill) {
-        new WebXRPolyfill();
-        return resolve();
-    } else {
-        const url = "https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.js";
-        const s = document.createElement("script");
-        s.src = url;
-        document.head.appendChild(s);
-        s.onload = () => {
-            new WebXRPolyfill();
-            resolve();
-        };
-    }
-});
-
-        var createScene = function () {
-        
+        var createScene = async function () {
+            // Create scene
             var scene = new BABYLON.Scene(engine);
-            var camera = new BABYLON.ArcRotateCamera("Camera", -Math.PI / 2,  Math.PI / 2, 5, BABYLON.Vector3.Zero(), scene);
-            camera.attachControl(canvas, true);
         
-            var videoDome = new BABYLON.VideoDome(
-                "videoDome",
-                ["https://yoda.blob.core.windows.net/videos/uptale360.mp4"],
-                {
-                    resolution: 32,
-                    clickToPlay: true
-                },
-                scene
-            );
-            (async function () {
-            const xr = scene.createDefaultXRExperienceAsync();
-            })();
-
-
+            // Create simple sphere
+            var sphere = BABYLON.Mesh.CreateIcoSphere("sphere", { radius: 0.2, flat: true, subdivisions: 1 }, scene);
+            sphere.position.y = 1;
+            sphere.material = new BABYLON.StandardMaterial("sphere material", scene)
+        
+            // Lights and camera
+            var light = new BABYLON.DirectionalLight("light", new BABYLON.Vector3(0, -0.5, 1.0), scene);
+            light.position = new BABYLON.Vector3(0, 5, -2);
+            var camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 4, 3, new BABYLON.Vector3(0, 1, 0), scene);
+            camera.attachControl(canvas, true);
+            scene.activeCamera.beta += 0.8;
+        
+            // Default Environment
+            var environment = scene.createDefaultEnvironment({ enableGroundShadow: true });
+            environment.setMainColor(BABYLON.Color3.FromHexString("#74b9ff"))
+            environment.ground.parent.position.y = 0;
+            environment.ground.position.y = 0
+        
+            let groundMaterial = new BABYLON.StandardMaterial("ground", scene);
+            groundMaterial.backFaceCulling = false;
+            groundMaterial.diffuseColor = BABYLON.Color3.Green();
+            groundMaterial.diffuseTexture = new BABYLON.Texture('textures/grass.png', scene);
+        
+            // simulate a second floor
+            const secondGround = environment.ground.clone();
+            secondGround.position.z = 10;
+            secondGround.position.y = 2;
+            secondGround.material = groundMaterial;
+        
+            // snap points
+            const snapPoint = BABYLON.MeshBuilder.CreateBox('snapPoint', { height: 0.01, width: 1, depth: 1 });
+            snapPoint.position.x = 4;
+            snapPoint.position.z = 3;
+        
+            // Enable XR
+            var experience = await scene.createDefaultXRExperienceAsync({
+                floorMeshes: [environment.ground, secondGround]
+            });
+        
+            experience.teleportation.addSnapPoint(snapPoint.position);
+        
+            // Runs every frame to rotate the sphere
+            scene.onBeforeRenderObservable.add(() => {
+                sphere.rotation.y += 0.0001 * scene.getEngine().getDeltaTime();
+                sphere.rotation.x += 0.0001 * scene.getEngine().getDeltaTime();
+            })
+        
             return scene;
         };
-        
                 window.initFunction = async function() {
                     
                     
@@ -113,7 +123,8 @@
         if (!engine) throw 'engine should not be null.';
         startRenderLoop(engine, canvas);
         window.scene = createScene();};
-        initFunction().then(() => {sceneToRender = scene                    
+        initFunction().then(() => {scene.then(returnedScene => { sceneToRender = returnedScene; });
+                            
         });
 
         // Resize
